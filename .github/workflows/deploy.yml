@@ -8,7 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -27,21 +27,38 @@ jobs:
         run: |
           python -c "import ast; ast.parse(open('app.py').read()); print('app.py syntax OK')"
 
-      - name: Trigger Render Deploy
-        if: env.RENDER_DEPLOY_HOOK != ''
+      - name: Validate imports
+        run: |
+          python -c "from ldap3 import Server, Connection; from msal import ConfidentialClientApplication; from flask import Flask; print('All imports OK')"
+
+      - name: Trigger Render Deploy Hook (if configured)
+        if: ${{ secrets.RENDER_DEPLOY_HOOK != '' }}
         env:
           RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
         run: |
-          curl -X POST "$RENDER_DEPLOY_HOOK" || echo "Deploy hook called"
+          curl -s -X POST "$RENDER_DEPLOY_HOOK" && echo "Render deploy triggered"
 
-      - name: Deploy notification
+      - name: Deploy Complete
         run: |
-          echo "===================================="
-          echo "Build succeeded! App is ready."
-          echo "Deploy to Render.com:"
-          echo "1. Create account at https://render.com"
-          echo "2. New Web Service -> Connect GitHub repo"
-          echo "3. Runtime: Python, Build: pip install -r requirements.txt"
-          echo "4. Start: gunicorn app:app"
-          echo "5. Add RENDER_DEPLOY_HOOK secret to GitHub for auto-deploy"
-          echo "===================================="
+          echo "=================================================="
+          echo "BUILD SUCCEEDED - App is ready for production"
+          echo "=================================================="
+          echo ""
+          echo "HOW TO GO LIVE (free options):"
+          echo ""
+          echo "OPTION A: Render.com (Recommended Free)"
+          echo "  1. Go to https://render.com and sign up"
+          echo "  2. New Web Service -> Connect this GitHub repo"
+          echo "  3. Runtime: Python 3"
+          echo "  4. Build Command: pip install -r requirements.txt"
+          echo "  5. Start Command: gunicorn app:app"
+          echo "  6. Auto-deploy on git push is built-in!"
+          echo ""
+          echo "OPTION B: Railway.app (Free tier)"
+          echo "  1. Go to https://railway.app"
+          echo "  2. New Project -> Deploy from GitHub repo"
+          echo "  3. It auto-detects Python and uses Procfile"
+          echo ""
+          echo "IMPORTANT: For on-prem AD access, the server"
+          echo "must have network access to your domain controller."
+          echo "=================================================="
