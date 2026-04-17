@@ -1,0 +1,7 @@
+flask
+flask-cors
+python-ldap
+msal
+requests
+python-dotenv
+gunicorn
