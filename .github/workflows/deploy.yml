@@ -31,34 +31,33 @@ jobs:
         run: |
           python -c "from ldap3 import Server, Connection; from msal import ConfidentialClientApplication; from flask import Flask; print('All imports OK')"
 
-      - name: Trigger Render Deploy Hook (if configured)
-        if: ${{ secrets.RENDER_DEPLOY_HOOK != '' }}
+      - name: Trigger Render Deploy Hook
         env:
           RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
         run: |
-          curl -s -X POST "$RENDER_DEPLOY_HOOK" && echo "Render deploy triggered"
+          if [ -n "$RENDER_DEPLOY_HOOK" ]; then
+            curl -s -X POST "$RENDER_DEPLOY_HOOK" && echo "Render deploy triggered successfully"
+          else
+            echo "RENDER_DEPLOY_HOOK not configured - skipping auto-deploy trigger"
+            echo "To enable: Add RENDER_DEPLOY_HOOK as a repository secret"
+          fi
 
-      - name: Deploy Complete
+      - name: Build Summary
         run: |
           echo "=================================================="
-          echo "BUILD SUCCEEDED - App is ready for production"
+          echo "BUILD SUCCEEDED - App code is production-ready!"
           echo "=================================================="
           echo ""
-          echo "HOW TO GO LIVE (free options):"
+          echo "HOW TO GO LIVE FOR FREE:"
           echo ""
-          echo "OPTION A: Render.com (Recommended Free)"
-          echo "  1. Go to https://render.com and sign up"
+          echo "Option 1: Render.com (Recommended)"
+          echo "  1. Sign up at https://render.com"
           echo "  2. New Web Service -> Connect this GitHub repo"
-          echo "  3. Runtime: Python 3"
-          echo "  4. Build Command: pip install -r requirements.txt"
-          echo "  5. Start Command: gunicorn app:app"
-          echo "  6. Auto-deploy on git push is built-in!"
+          echo "  3. Build: pip install -r requirements.txt"
+          echo "  4. Start: gunicorn app:app"
+          echo "  5. Add RENDER_DEPLOY_HOOK secret for auto-deploy"
           echo ""
-          echo "OPTION B: Railway.app (Free tier)"
-          echo "  1. Go to https://railway.app"
-          echo "  2. New Project -> Deploy from GitHub repo"
-          echo "  3. It auto-detects Python and uses Procfile"
-          echo ""
-          echo "IMPORTANT: For on-prem AD access, the server"
-          echo "must have network access to your domain controller."
+          echo "Option 2: Railway.app"
+          echo "  1. Sign up at https://railway.app"
+          echo "  2. Deploy from GitHub - auto-detects Python"
           echo "=================================================="
