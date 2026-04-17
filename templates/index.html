@@ -19,18 +19,19 @@
       border-radius: 8px;
     }
     .log-panel .log-error { color: #ff6b6b; }
-    .log-panel .log-warn { color: #ffd93d; }
+    .log-panel .log-warn  { color: #ffd93d; }
     .badge-lic { font-size: 0.72rem; margin: 1px; }
-    .cred-card { border-left: 4px solid #0d6efd; }
+    .cred-card  { border-left: 4px solid #0d6efd; }
     .azure-card { border-left: 4px solid #198754; }
     .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
-    .dot-ok { background: #198754; }
-    .dot-warn { background: #ffc107; }
+    .dot-ok  { background: #198754; }
+    .dot-warn{ background: #ffc107; }
     .dot-err { background: #dc3545; }
     h1 .icon { font-size: 1.5rem; margin-right: 8px; }
   </style>
 </head>
 <body>
+{% raw %}
 <div id="app" class="container-xl py-4">
   <div class="d-flex align-items-center mb-4">
     <div>
@@ -44,150 +45,108 @@
 
   <!-- Credential Cards -->
   <div class="row g-3 mb-4">
-    <!-- AD Credentials -->
-    <div class="col-lg-6">
-      <div class="card shadow-sm cred-card">
+    <!-- AD Card -->
+    <div class="col-md-6">
+      <div class="card cred-card shadow-sm">
+        <div class="card-header fw-semibold">&#127970; Active Directory (LDAP)</div>
         <div class="card-body">
-          <h5 class="card-title text-primary">&#127968; Active Directory (On-Prem LDAP)</h5>
           <div class="mb-2">
-            <label class="form-label small fw-semibold">LDAP Server URL</label>
-            <input type="text" class="form-control form-control-sm" v-model="creds.ldap_server"
-              placeholder="ldap://your-dc.domain.local">
+            <label class="form-label">LDAP Server</label>
+            <input v-model="ad.server" type="text" class="form-control form-control-sm" placeholder="ldap://dc.example.com">
           </div>
           <div class="mb-2">
-            <label class="form-label small fw-semibold">Base DN</label>
-            <input type="text" class="form-control form-control-sm" v-model="creds.base_dn"
-              placeholder="DC=yourdomain,DC=com">
+            <label class="form-label">Bind DN</label>
+            <input v-model="ad.bindDn" type="text" class="form-control form-control-sm" placeholder="CN=admin,DC=example,DC=com">
           </div>
           <div class="mb-2">
-            <label class="form-label small fw-semibold">Admin Account (DN or UPN)</label>
-            <input type="text" class="form-control form-control-sm" v-model="creds.ad_user"
-              placeholder="admin@yourdomain.com">
+            <label class="form-label">Password</label>
+            <input v-model="ad.password" type="password" class="form-control form-control-sm">
           </div>
-          <div>
-            <label class="form-label small fw-semibold">Password</label>
-            <input type="password" class="form-control form-control-sm" v-model="creds.ad_pass"
-              placeholder="AD admin password">
+          <div class="mb-2">
+            <label class="form-label">Search Base</label>
+            <input v-model="ad.searchBase" type="text" class="form-control form-control-sm" placeholder="DC=example,DC=com">
+          </div>
+          <div class="d-flex align-items-center gap-2 mt-2">
+            <button @click="testAD" class="btn btn-sm btn-outline-primary" :disabled="testing.ad">
+              {{ testing.ad ? 'Testing...' : 'Test Connection' }}
+            </button>
+            <span v-if="status.ad" :class="'badge ' + (status.ad === 'ok' ? 'bg-success' : 'bg-danger')">
+              {{ status.ad === 'ok' ? '&#10003; Connected' : '&#10007; Failed' }}
+            </span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Azure Credentials -->
-    <div class="col-lg-6">
-      <div class="card shadow-sm azure-card">
+    <!-- Azure Card -->
+    <div class="col-md-6">
+      <div class="card azure-card shadow-sm">
+        <div class="card-header fw-semibold">&#9729;&#65039; Azure AD / Office 365</div>
         <div class="card-body">
-          <h5 class="card-title text-success">&#9729; Azure Entra ID / O365</h5>
           <div class="mb-2">
-            <label class="form-label small fw-semibold">Tenant ID</label>
-            <input type="text" class="form-control form-control-sm" v-model="creds.azure_tenant_id"
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+            <label class="form-label">Tenant ID</label>
+            <input v-model="az.tenantId" type="text" class="form-control form-control-sm" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
           </div>
           <div class="mb-2">
-            <label class="form-label small fw-semibold">App (Client) ID</label>
-            <input type="text" class="form-control form-control-sm" v-model="creds.azure_client_id"
-              placeholder="App Registration Client ID">
+            <label class="form-label">Client ID</label>
+            <input v-model="az.clientId" type="text" class="form-control form-control-sm" placeholder="App (client) ID">
           </div>
-          <div>
-            <label class="form-label small fw-semibold">Client Secret</label>
-            <input type="password" class="form-control form-control-sm" v-model="creds.azure_client_secret"
-              placeholder="App Registration Secret">
+          <div class="mb-2">
+            <label class="form-label">Client Secret</label>
+            <input v-model="az.clientSecret" type="password" class="form-control form-control-sm">
           </div>
-          <div class="mt-2">
-            <small class="text-muted">&#128274; Required permissions: <code>User.ReadWrite.All</code>, <code>Directory.ReadWrite.All</code></small>
+          <div class="d-flex align-items-center gap-2 mt-2">
+            <button @click="testAzure" class="btn btn-sm btn-outline-success" :disabled="testing.azure">
+              {{ testing.azure ? 'Testing...' : 'Test Connection' }}
+            </button>
+            <span v-if="status.azure" :class="'badge ' + (status.azure === 'ok' ? 'bg-success' : 'bg-danger')">
+              {{ status.azure === 'ok' ? '&#10003; Connected' : '&#10007; Failed' }}
+            </span>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Action Buttons -->
-  <div class="d-flex gap-2 mb-4 flex-wrap">
-    <button @click="scanUsers" class="btn btn-primary" :disabled="loading">
+  <!-- Scan Button -->
+  <div class="text-center mb-4">
+    <button @click="scan" class="btn btn-primary btn-lg px-5" :disabled="loading">
       <span v-if="loading" class="spinner-border spinner-border-sm me-2"></span>
       {{ loading ? 'Scanning...' : '&#128269; Scan for Disabled Users' }}
     </button>
-    <button @click="removeAll" class="btn btn-danger"
-      :disabled="loading || licensedUsers.length === 0">
-      &#128465; Remove All Licenses ({{ licensedUsers.length }})
-    </button>
-    <button @click="clearLogs" class="btn btn-outline-secondary btn-sm ms-auto">
-      Clear Logs
-    </button>
-  </div>
-
-  <!-- Alert banner -->
-  <div v-if="errorMsg" class="alert alert-danger alert-dismissible" role="alert">
-    {{ errorMsg }}
-    <button type="button" class="btn-close" @click="errorMsg = ''"></button>
-  </div>
-
-  <!-- Summary stats -->
-  <div v-if="users.length > 0" class="row g-2 mb-3">
-    <div class="col-sm-4">
-      <div class="card text-center border-0 bg-white shadow-sm p-2">
-        <div class="fs-4 fw-bold text-primary">{{ users.length }}</div>
-        <div class="small text-muted">Disabled AD Users</div>
-      </div>
-    </div>
-    <div class="col-sm-4">
-      <div class="card text-center border-0 bg-white shadow-sm p-2">
-        <div class="fs-4 fw-bold text-danger">{{ licensedUsers.length }}</div>
-        <div class="small text-muted">With Active Licenses</div>
-      </div>
-    </div>
-    <div class="col-sm-4">
-      <div class="card text-center border-0 bg-white shadow-sm p-2">
-        <div class="fs-4 fw-bold text-success">{{ users.length - licensedUsers.length }}</div>
-        <div class="small text-muted">Already Clean</div>
-      </div>
-    </div>
   </div>
 
   <!-- Results Table -->
-  <div class="card shadow-sm mb-4" v-if="users.length > 0">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center">
-      <strong>&#128101; Identified Disabled Accounts</strong>
-      <span class="badge bg-primary">{{ users.length }} users</span>
+  <div v-if="results.length > 0" class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>&#128203; Results &mdash; <strong>{{ results.length }}</strong> disabled user(s) with active licenses found</span>
+      <button @click="removeAll" class="btn btn-sm btn-danger" :disabled="removing">
+        {{ removing ? 'Removing...' : '&#128465; Remove All Licenses' }}
+      </button>
     </div>
     <div class="table-responsive">
-      <table class="table table-hover mb-0 align-middle">
-        <thead class="table-light">
+      <table class="table table-hover table-sm mb-0">
+        <thead class="table-dark">
           <tr>
-            <th>Display Name</th>
-            <th>User Principal Name</th>
-            <th>O365 Licenses</th>
-            <th>Status</th>
+            <th>User</th>
+            <th>UPN</th>
+            <th>AD Status</th>
+            <th>Licenses</th>
             <th>Action</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="user in users" :key="user.upn">
-            <td><strong>{{ user.name || user.sam }}</strong></td>
-            <td><code class="small">{{ user.upn }}</code></td>
+          <tr v-for="u in results" :key="u.upn">
+            <td>{{ u.displayName }}</td>
+            <td><code>{{ u.upn }}</code></td>
+            <td><span class="status-dot dot-err"></span>Disabled</td>
             <td>
-              <span v-if="user.has_license">
-                <span class="badge bg-warning text-dark badge-lic" v-for="lic in user.licenses" :key="lic">{{ lic }}</span>
-              </span>
-              <span v-else class="text-muted small">No licenses</span>
+              <span v-for="lic in u.licenses" :key="lic" class="badge bg-warning text-dark badge-lic">{{ lic }}</span>
             </td>
             <td>
-              <span v-if="user.has_license">
-                <span class="status-dot dot-warn"></span>
-                <span class="text-warning fw-semibold small">Licensed</span>
-              </span>
-              <span v-else>
-                <span class="status-dot dot-ok"></span>
-                <span class="text-success small">Clean</span>
-              </span>
-            </td>
-            <td>
-              <button v-if="user.has_license" @click="removeLicense(user)"
-                class="btn btn-danger btn-sm" :disabled="user.removing">
-                <span v-if="user.removing" class="spinner-border spinner-border-sm"></span>
-                <span v-else>&#128465; Remove</span>
+              <button @click="removeLicenses(u)" class="btn btn-xs btn-outline-danger btn-sm" :disabled="u.removing">
+                {{ u.removing ? '...' : 'Remove' }}
               </button>
-              <span v-else class="text-muted small">&#10003; Done</span>
             </td>
           </tr>
         </tbody>
@@ -195,160 +154,113 @@
     </div>
   </div>
 
-  <!-- Audit Log Panel -->
+  <div v-else-if="scanned && results.length === 0" class="alert alert-success">
+    &#10003; No disabled users with active O365 licenses found.
+  </div>
+
+  <!-- Log Panel -->
   <div class="card shadow-sm">
-    <div class="card-header bg-dark text-white d-flex justify-content-between">
-      <strong>&#128221; Audit Log</strong>
-      <small class="text-secondary">{{ logs.length }} entries</small>
+    <div class="card-header d-flex justify-content-between">
+      <span>&#128195; Activity Log</span>
+      <button @click="logs=[]" class="btn btn-sm btn-outline-secondary">Clear</button>
     </div>
     <div class="log-panel" ref="logPanel">
-      <div v-for="(log, i) in logs" :key="i"
-        :class="{'log-error': log.level === 'ERROR', 'log-warn': log.level === 'WARN'}">
-        [{{ log.timestamp }}] [{{ log.level }}] {{ log.message }}
+      <div v-for="(entry, i) in logs" :key="i" :class="entry.level === 'error' ? 'log-error' : entry.level === 'warn' ? 'log-warn' : ''">
+        [{{ entry.time }}] {{ entry.msg }}
       </div>
-      <div v-if="logs.length === 0" class="text-secondary">Ready. Configure credentials and click Scan.</div>
+      <div v-if="logs.length === 0" class="text-secondary">No activity yet.</div>
     </div>
   </div>
 </div>
 
 <script>
-const { createApp, ref, computed, nextTick } = Vue;
-
+const { createApp, ref, reactive, nextTick } = Vue;
 createApp({
-  data() {
-    return {
-      loading: false,
-      errorMsg: '',
-      lastScan: null,
-      creds: {
-        ldap_server: '',
-        base_dn: '',
-        ad_user: '',
-        ad_pass: '',
-        azure_tenant_id: '',
-        azure_client_id: '',
-        azure_client_secret: ''
-      },
-      users: [],
-      logs: [{ timestamp: new Date().toLocaleString(), level: 'INFO', message: 'Application ready. Enter credentials and click Scan.' }]
-    };
-  },
-  computed: {
-    licensedUsers() {
-      return this.users.filter(u => u.has_license);
+  setup() {
+    const ad = reactive({ server: '', bindDn: '', password: '', searchBase: '' });
+    const az = reactive({ tenantId: '', clientId: '', clientSecret: '' });
+    const results = ref([]);
+    const logs = ref([]);
+    const loading = ref(false);
+    const removing = ref(false);
+    const scanned = ref(false);
+    const lastScan = ref('');
+    const status = reactive({ ad: '', azure: '' });
+    const testing = reactive({ ad: false, azure: false });
+    const logPanel = ref(null);
+
+    function addLog(msg, level = 'info') {
+      const now = new Date().toLocaleTimeString();
+      logs.value.push({ time: now, msg, level });
+      nextTick(() => { if (logPanel.value) logPanel.value.scrollTop = logPanel.value.scrollHeight; });
     }
-  },
-  methods: {
-    addLog(message, level = 'INFO') {
-      this.logs.unshift({
-        timestamp: new Date().toLocaleString(),
-        level,
-        message
-      });
-    },
-    clearLogs() {
-      this.logs = [];
-    },
-    async scanUsers() {
-      this.errorMsg = '';
-      if (!this.creds.ldap_server || !this.creds.ad_user || !this.creds.azure_tenant_id) {
-        this.errorMsg = 'Please fill in all required credential fields.';
-        return;
-      }
-      this.loading = true;
-      this.users = [];
-      this.addLog('=== Starting cross-directory license scan ===');
+
+    async function testAD() {
+      testing.ad = true; status.ad = '';
+      addLog('Testing AD connection...');
       try {
-        const res = await fetch('/api/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.creds)
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          this.errorMsg = data.error || 'Scan failed.';
-          this.addLog('Scan failed: ' + this.errorMsg, 'ERROR');
-        } else {
-          this.users = data.map(u => ({ ...u, removing: false }));
-          const licensed = this.users.filter(u => u.has_license).length;
-          this.addLog(`Scan complete. ${this.users.length} disabled users found, ${licensed} with active licenses.`);
-          this.lastScan = new Date().toLocaleTimeString();
-          // Also load backend logs
-          await this.fetchBackendLogs();
-        }
-      } catch (e) {
-        this.errorMsg = 'Network error: ' + e.message;
-        this.addLog('Network error: ' + e.message, 'ERROR');
-      }
-      this.loading = false;
-    },
-    async fetchBackendLogs() {
-      try {
-        const res = await fetch('/api/logs');
-        const backendLogs = await res.json();
-        this.logs = [...backendLogs, ...this.logs].slice(0, 200);
-      } catch (e) {}
-    },
-    async removeLicense(user) {
-      user.removing = true;
-      this.addLog(`Removing licenses from ${user.upn}...`);
-      try {
-        const res = await fetch('/api/remove-license', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...this.creds,
-            upn: user.upn,
-            sku_ids: user.sku_ids
-          })
-        });
-        const data = await res.json();
-        if (data.status === 'success') {
-          this.addLog('SUCCESS: ' + data.message);
-          user.has_license = false;
-          user.licenses = [];
-          user.sku_ids = [];
-        } else {
-          this.addLog('FAILED: ' + data.message, 'ERROR');
-        }
-      } catch (e) {
-        this.addLog('Error: ' + e.message, 'ERROR');
-      }
-      user.removing = false;
-    },
-    async removeAll() {
-      if (!confirm(`Remove licenses from all ${this.licensedUsers.length} users?`)) return;
-      this.addLog(`=== Auto-removing licenses from ${this.licensedUsers.length} licensed users ===`);
-      try {
-        const res = await fetch('/api/remove-all-licensed', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...this.creds,
-            users: this.users
-          })
-        });
-        const data = await res.json();
-        if (data.results) {
-          data.results.forEach(r => {
-            const user = this.users.find(u => u.upn === r.upn);
-            if (user && r.status === 'success') {
-              user.has_license = false;
-              user.licenses = [];
-              user.sku_ids = [];
-              this.addLog(`Removed: ${r.upn}`);
-            } else if (r.status === 'error') {
-              this.addLog(`Failed: ${r.upn} - ${r.detail}`, 'ERROR');
-            }
-          });
-        }
-        await this.fetchBackendLogs();
-      } catch (e) {
-        this.addLog('Error during bulk removal: ' + e.message, 'ERROR');
-      }
+        const r = await fetch('/api/test-ad', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ad) });
+        const d = await r.json();
+        status.ad = d.ok ? 'ok' : 'err';
+        addLog(d.ok ? 'AD connection successful.' : 'AD connection failed: ' + d.error, d.ok ? 'info' : 'error');
+      } catch(e) { status.ad = 'err'; addLog('AD test error: ' + e.message, 'error'); }
+      testing.ad = false;
     }
+
+    async function testAzure() {
+      testing.azure = true; status.azure = '';
+      addLog('Testing Azure connection...');
+      try {
+        const r = await fetch('/api/test-azure', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(az) });
+        const d = await r.json();
+        status.azure = d.ok ? 'ok' : 'err';
+        addLog(d.ok ? 'Azure connection successful.' : 'Azure connection failed: ' + d.error, d.ok ? 'info' : 'error');
+      } catch(e) { status.azure = 'err'; addLog('Azure test error: ' + e.message, 'error'); }
+      testing.azure = false;
+    }
+
+    async function scan() {
+      loading.value = true; results.value = []; scanned.value = false;
+      addLog('Starting scan for disabled AD users with O365 licenses...');
+      try {
+        const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ad, az }) });
+        const d = await r.json();
+        if (d.error) { addLog('Scan error: ' + d.error, 'error'); }
+        else {
+          results.value = d.users.map(u => ({ ...u, removing: false }));
+          lastScan.value = new Date().toLocaleString();
+          scanned.value = true;
+          addLog('Scan complete. Found ' + d.users.length + ' disabled user(s) with licenses.', d.users.length > 0 ? 'warn' : 'info');
+          d.log.forEach(l => addLog(l));
+        }
+      } catch(e) { addLog('Scan failed: ' + e.message, 'error'); }
+      loading.value = false;
+    }
+
+    async function removeLicenses(u) {
+      u.removing = true;
+      addLog('Removing licenses for ' + u.upn + '...');
+      try {
+        const r = await fetch('/api/remove-licenses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ az, upn: u.upn }) });
+        const d = await r.json();
+        if (d.ok) {
+          addLog('Licenses removed for ' + u.upn, 'info');
+          results.value = results.value.filter(x => x.upn !== u.upn);
+        } else { addLog('Failed for ' + u.upn + ': ' + d.error, 'error'); u.removing = false; }
+      } catch(e) { addLog('Error: ' + e.message, 'error'); u.removing = false; }
+    }
+
+    async function removeAll() {
+      removing.value = true;
+      addLog('Removing all licenses...');
+      for (const u of results.value) { await removeLicenses(u); }
+      removing.value = false;
+    }
+
+    return { ad, az, results, logs, loading, removing, scanned, lastScan, status, testing, logPanel, testAD, testAzure, scan, removeLicenses, removeAll };
   }
 }).mount('#app');
 </script>
+{% endraw %}
 </body>
 </html>
