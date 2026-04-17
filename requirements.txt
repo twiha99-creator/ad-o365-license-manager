@@ -1,6 +1,6 @@
 flask
 flask-cors
-python-ldap
+ldap3
 msal
 requests
 python-dotenv
