@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AD &amp; O365 License Manager</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <style>
+    body { background: #f0f2f5; }
+    .log-panel {
+      background: #1a1a2e;
+      color: #00ff88;
+      font-family: monospace;
+      font-size: 0.82rem;
+      height: 250px;
+      overflow-y: auto;
+      padding: 12px;
+      border-radius: 8px;
+    }
+    .log-panel .log-error { color: #ff6b6b; }
+    .log-panel .log-warn { color: #ffd93d; }
+    .badge-lic { font-size: 0.72rem; margin: 1px; }
+    .cred-card { border-left: 4px solid #0d6efd; }
+    .azure-card { border-left: 4px solid #198754; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+    .dot-ok { background: #198754; }
+    .dot-warn { background: #ffc107; }
+    .dot-err { background: #dc3545; }
+    h1 .icon { font-size: 1.5rem; margin-right: 8px; }
+  </style>
+</head>
+<body>
+<div id="app" class="container-xl py-4">
+  <div class="d-flex align-items-center mb-4">
+    <div>
+      <h1 class="h3 mb-0"><span class="icon">&#128274;</span>AD &amp; O365 License Manager</h1>
+      <small class="text-muted">Identify disabled AD users with active Office 365 licenses and reclaim them</small>
+    </div>
+    <div class="ms-auto">
+      <span v-if="lastScan" class="badge bg-secondary">Last scan: {{ lastScan }}</span>
+    </div>
+  </div>
+
+  <!-- Credential Cards -->
+  <div class="row g-3 mb-4">
+    <!-- AD Credentials -->
+    <div class="col-lg-6">
+      <div class="card shadow-sm cred-card">
+        <div class="card-body">
+          <h5 class="card-title text-primary">&#127968; Active Directory (On-Prem LDAP)</h5>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">LDAP Server URL</label>
+            <input type="text" class="form-control form-control-sm" v-model="creds.ldap_server"
+              placeholder="ldap://your-dc.domain.local">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Base DN</label>
+            <input type="text" class="form-control form-control-sm" v-model="creds.base_dn"
+              placeholder="DC=yourdomain,DC=com">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Admin Account (DN or UPN)</label>
+            <input type="text" class="form-control form-control-sm" v-model="creds.ad_user"
+              placeholder="admin@yourdomain.com">
+          </div>
+          <div>
+            <label class="form-label small fw-semibold">Password</label>
+            <input type="password" class="form-control form-control-sm" v-model="creds.ad_pass"
+              placeholder="AD admin password">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Azure Credentials -->
+    <div class="col-lg-6">
+      <div class="card shadow-sm azure-card">
+        <div class="card-body">
+          <h5 class="card-title text-success">&#9729; Azure Entra ID / O365</h5>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Tenant ID</label>
+            <input type="text" class="form-control form-control-sm" v-model="creds.azure_tenant_id"
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">App (Client) ID</label>
+            <input type="text" class="form-control form-control-sm" v-model="creds.azure_client_id"
+              placeholder="App Registration Client ID">
+          </div>
+          <div>
+            <label class="form-label small fw-semibold">Client Secret</label>
+            <input type="password" class="form-control form-control-sm" v-model="creds.azure_client_secret"
+              placeholder="App Registration Secret">
+          </div>
+          <div class="mt-2">
+            <small class="text-muted">&#128274; Required permissions: <code>User.ReadWrite.All</code>, <code>Directory.ReadWrite.All</code></small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Action Buttons -->
+  <div class="d-flex gap-2 mb-4 flex-wrap">
+    <button @click="scanUsers" class="btn btn-primary" :disabled="loading">
+      <span v-if="loading" class="spinner-border spinner-border-sm me-2"></span>
+      {{ loading ? 'Scanning...' : '&#128269; Scan for Disabled Users' }}
+    </button>
+    <button @click="removeAll" class="btn btn-danger"
+      :disabled="loading || licensedUsers.length === 0">
+      &#128465; Remove All Licenses ({{ licensedUsers.length }})
+    </button>
+    <button @click="clearLogs" class="btn btn-outline-secondary btn-sm ms-auto">
+      Clear Logs
+    </button>
+  </div>
+
+  <!-- Alert banner -->
+  <div v-if="errorMsg" class="alert alert-danger alert-dismissible" role="alert">
+    {{ errorMsg }}
+    <button type="button" class="btn-close" @click="errorMsg = ''"></button>
+  </div>
+
+  <!-- Summary stats -->
+  <div v-if="users.length > 0" class="row g-2 mb-3">
+    <div class="col-sm-4">
+      <div class="card text-center border-0 bg-white shadow-sm p-2">
+        <div class="fs-4 fw-bold text-primary">{{ users.length }}</div>
+        <div class="small text-muted">Disabled AD Users</div>
+      </div>
+    </div>
+    <div class="col-sm-4">
+      <div class="card text-center border-0 bg-white shadow-sm p-2">
+        <div class="fs-4 fw-bold text-danger">{{ licensedUsers.length }}</div>
+        <div class="small text-muted">With Active Licenses</div>
+      </div>
+    </div>
+    <div class="col-sm-4">
+      <div class="card text-center border-0 bg-white shadow-sm p-2">
+        <div class="fs-4 fw-bold text-success">{{ users.length - licensedUsers.length }}</div>
+        <div class="small text-muted">Already Clean</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results Table -->
+  <div class="card shadow-sm mb-4" v-if="users.length > 0">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+      <strong>&#128101; Identified Disabled Accounts</strong>
+      <span class="badge bg-primary">{{ users.length }} users</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Display Name</th>
+            <th>User Principal Name</th>
+            <th>O365 Licenses</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="user in users" :key="user.upn">
+            <td><strong>{{ user.name || user.sam }}</strong></td>
+            <td><code class="small">{{ user.upn }}</code></td>
+            <td>
+              <span v-if="user.has_license">
+                <span class="badge bg-warning text-dark badge-lic" v-for="lic in user.licenses" :key="lic">{{ lic }}</span>
+              </span>
+              <span v-else class="text-muted small">No licenses</span>
+            </td>
+            <td>
+              <span v-if="user.has_license">
+                <span class="status-dot dot-warn"></span>
+                <span class="text-warning fw-semibold small">Licensed</span>
+              </span>
+              <span v-else>
+                <span class="status-dot dot-ok"></span>
+                <span class="text-success small">Clean</span>
+              </span>
+            </td>
+            <td>
+              <button v-if="user.has_license" @click="removeLicense(user)"
+                class="btn btn-danger btn-sm" :disabled="user.removing">
+                <span v-if="user.removing" class="spinner-border spinner-border-sm"></span>
+                <span v-else>&#128465; Remove</span>
+              </button>
+              <span v-else class="text-muted small">&#10003; Done</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Audit Log Panel -->
+  <div class="card shadow-sm">
+    <div class="card-header bg-dark text-white d-flex justify-content-between">
+      <strong>&#128221; Audit Log</strong>
+      <small class="text-secondary">{{ logs.length }} entries</small>
+    </div>
+    <div class="log-panel" ref="logPanel">
+      <div v-for="(log, i) in logs" :key="i"
+        :class="{'log-error': log.level === 'ERROR', 'log-warn': log.level === 'WARN'}">
+        [{{ log.timestamp }}] [{{ log.level }}] {{ log.message }}
+      </div>
+      <div v-if="logs.length === 0" class="text-secondary">Ready. Configure credentials and click Scan.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const { createApp, ref, computed, nextTick } = Vue;
+
+createApp({
+  data() {
+    return {
+      loading: false,
+      errorMsg: '',
+      lastScan: null,
+      creds: {
+        ldap_server: '',
+        base_dn: '',
+        ad_user: '',
+        ad_pass: '',
+        azure_tenant_id: '',
+        azure_client_id: '',
+        azure_client_secret: ''
+      },
+      users: [],
+      logs: [{ timestamp: new Date().toLocaleString(), level: 'INFO', message: 'Application ready. Enter credentials and click Scan.' }]
+    };
+  },
+  computed: {
+    licensedUsers() {
+      return this.users.filter(u => u.has_license);
+    }
+  },
+  methods: {
+    addLog(message, level = 'INFO') {
+      this.logs.unshift({
+        timestamp: new Date().toLocaleString(),
+        level,
+        message
+      });
+    },
+    clearLogs() {
+      this.logs = [];
+    },
+    async scanUsers() {
+      this.errorMsg = '';
+      if (!this.creds.ldap_server || !this.creds.ad_user || !this.creds.azure_tenant_id) {
+        this.errorMsg = 'Please fill in all required credential fields.';
+        return;
+      }
+      this.loading = true;
+      this.users = [];
+      this.addLog('=== Starting cross-directory license scan ===');
+      try {
+        const res = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.creds)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          this.errorMsg = data.error || 'Scan failed.';
+          this.addLog('Scan failed: ' + this.errorMsg, 'ERROR');
+        } else {
+          this.users = data.map(u => ({ ...u, removing: false }));
+          const licensed = this.users.filter(u => u.has_license).length;
+          this.addLog(`Scan complete. ${this.users.length} disabled users found, ${licensed} with active licenses.`);
+          this.lastScan = new Date().toLocaleTimeString();
+          // Also load backend logs
+          await this.fetchBackendLogs();
+        }
+      } catch (e) {
+        this.errorMsg = 'Network error: ' + e.message;
+        this.addLog('Network error: ' + e.message, 'ERROR');
+      }
+      this.loading = false;
+    },
+    async fetchBackendLogs() {
+      try {
+        const res = await fetch('/api/logs');
+        const backendLogs = await res.json();
+        this.logs = [...backendLogs, ...this.logs].slice(0, 200);
+      } catch (e) {}
+    },
+    async removeLicense(user) {
+      user.removing = true;
+      this.addLog(`Removing licenses from ${user.upn}...`);
+      try {
+        const res = await fetch('/api/remove-license', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...this.creds,
+            upn: user.upn,
+            sku_ids: user.sku_ids
+          })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          this.addLog('SUCCESS: ' + data.message);
+          user.has_license = false;
+          user.licenses = [];
+          user.sku_ids = [];
+        } else {
+          this.addLog('FAILED: ' + data.message, 'ERROR');
+        }
+      } catch (e) {
+        this.addLog('Error: ' + e.message, 'ERROR');
+      }
+      user.removing = false;
+    },
+    async removeAll() {
+      if (!confirm(`Remove licenses from all ${this.licensedUsers.length} users?`)) return;
+      this.addLog(`=== Auto-removing licenses from ${this.licensedUsers.length} licensed users ===`);
+      try {
+        const res = await fetch('/api/remove-all-licensed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...this.creds,
+            users: this.users
+          })
+        });
+        const data = await res.json();
+        if (data.results) {
+          data.results.forEach(r => {
+            const user = this.users.find(u => u.upn === r.upn);
+            if (user && r.status === 'success') {
+              user.has_license = false;
+              user.licenses = [];
+              user.sku_ids = [];
+              this.addLog(`Removed: ${r.upn}`);
+            } else if (r.status === 'error') {
+              this.addLog(`Failed: ${r.upn} - ${r.detail}`, 'ERROR');
+            }
+          });
+        }
+        await this.fetchBackendLogs();
+      } catch (e) {
+        this.addLog('Error during bulk removal: ' + e.message, 'ERROR');
+      }
+    }
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
